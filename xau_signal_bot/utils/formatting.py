@@ -226,6 +226,10 @@ def _source_status(source: SourceResult) -> str:
             "Spot/Futures Alignment",
             "USD/Yield Macro Pressure",
             "Multi-Timeframe Trend",
+            "Regime Alignment",
+            "Binance PAXG Proxy",
+            "GDELT Open News",
+            "Data Quality Gate",
             "Book Playbook Score",
         }:
             return _truncate(source.summary or source.status_text(), 180)

@@ -17,6 +17,7 @@ INTERVALS = {
     "5m": ("5m", "5d"),
     "15m": ("15m", "10d"),
     "1h": ("60m", "60d"),
+    "4h": ("60m", "60d"),
 }
 YAHOO_CHART_HOSTS = ("query2.finance.yahoo.com", "query1.finance.yahoo.com")
 YAHOO_GOLD_CANDLE_SYMBOLS = ("GC=F", "MGC=F")
@@ -72,6 +73,11 @@ class YahooService:
                     if frame.empty:
                         errors.append(f"{symbol}: no 3m OHLC candles after resampling")
                         continue
+                elif timeframe == "4h":
+                    frame = self._resample_4h(frame)
+                    if frame.empty:
+                        errors.append(f"{symbol}: no 4h OHLC candles after resampling")
+                        continue
                 meta = result.get("meta", {})
                 price = float(meta.get("regularMarketPrice") or frame["close"].iloc[-1])
                 market_data = MarketData(
@@ -85,7 +91,7 @@ class YahooService:
                     name=self.name,
                     ok=True,
                     direction=Direction.NEUTRAL,
-                    summary=f"OHLC data OK for {symbol}" + (" (3m resampled)" if timeframe == "3m" else ""),
+                    summary=f"OHLC data OK for {symbol}" + (" (resampled)" if timeframe in {"3m", "4h"} else ""),
                     data={"symbol": symbol, "timeframe": timeframe, "candles": len(frame)},
                     url=url,
                 )
@@ -164,3 +170,15 @@ class YahooService:
         if "volume" in frame.columns:
             aggregation["volume"] = "sum"
         return frame.resample("3min").agg(aggregation).dropna(subset=["open", "high", "low", "close"])
+
+    @staticmethod
+    def _resample_4h(frame: pd.DataFrame) -> pd.DataFrame:
+        aggregation = {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+        }
+        if "volume" in frame.columns:
+            aggregation["volume"] = "sum"
+        return frame.resample("4h").agg(aggregation).dropna(subset=["open", "high", "low", "close"])

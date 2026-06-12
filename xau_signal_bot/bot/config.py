@@ -40,10 +40,12 @@ class Settings(BaseSettings):
     source_timeout_seconds: float = Field(default=4.0, alias="SOURCE_TIMEOUT_SECONDS")
     source_concurrency: int = Field(default=8, alias="SOURCE_CONCURRENCY")
     signal_cache_seconds: float = Field(default=20.0, alias="SIGNAL_CACHE_SECONDS")
+    primary_quote_max_age_seconds: float = Field(default=90.0, alias="PRIMARY_QUOTE_MAX_AGE_SECONDS")
     dangerous_news_window_minutes: int = Field(default=60, alias="DANGEROUS_NEWS_WINDOW_MINUTES")
     alert_interval_minutes: int = Field(default=5, alias="ALERT_INTERVAL_MINUTES")
     alert_cooldown_minutes: int = Field(default=30, alias="ALERT_COOLDOWN_MINUTES")
     price_live_refresh_seconds: float = Field(default=1.0, alias="PRICE_LIVE_REFRESH_SECONDS")
+    proxy_max_basis_pct: float = Field(default=1.5, alias="PROXY_MAX_BASIS_PCT")
 
     yahoo_symbols: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["GC=F"], alias="YAHOO_SYMBOLS")
     swissquote_xauusd_url: str = Field(
@@ -83,6 +85,9 @@ class Settings(BaseSettings):
         default="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
         alias="FED_CALENDAR_URL",
     )
+    gdelt_doc_api_url: str = Field(default="https://api.gdeltproject.org/api/v2/doc/doc", alias="GDELT_DOC_API_URL")
+    binance_api_base_url: str = Field(default="https://api.binance.com", alias="BINANCE_API_BASE_URL")
+    binance_paxg_symbol: str = Field(default="PAXGUSDT", alias="BINANCE_PAXG_SYMBOL")
 
     news_api_key: str = Field(default="", alias="NEWS_API_KEY")
     reuters_api_url: str = Field(default="", alias="REUTERS_API_URL")
@@ -90,6 +95,7 @@ class Settings(BaseSettings):
     news_rss_urls: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "https://feeds.finance.yahoo.com/rss/2.0/headline?s=GC=F&region=US&lang=en-US",
+            "https://news.google.com/rss/search?q=XAU%2FUSD%20OR%20gold%20Fed%20dollar&hl=en-US&gl=US&ceid=US:en",
             "https://www.cnbc.com/id/100003114/device/rss/rss.html",
             "https://www.cnbc.com/id/15839069/device/rss/rss.html",
             "https://www.investing.com/rss/news_11.rss",

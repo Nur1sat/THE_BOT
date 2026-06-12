@@ -59,10 +59,16 @@ Implemented as separate modules under `xau_signal_bot/services/`:
 - `futures_alignment_service.py` - Swissquote spot versus Yahoo `GC=F` futures momentum and basis
 - `macro_market_service.py` - DXY and US 10Y yield pressure checks for gold
 - `multi_timeframe_service.py` - selected timeframe plus 5-minute and 15-minute trend confluence
+- `regime_alignment_service.py` - H4/H1/M15 regime alignment using higher-timeframe EMA structure
+- `gdelt_service.py` - no-key GDELT open headline metadata for gold/USD macro news
+- `binance_proxy_service.py` - Binance `PAXGUSDT` order book and trade-pressure proxy with spot-basis filtering
+- `data_quality_service.py` - stale quote, spread, and proxy-basis gate
 - `book_playbook_service.py` - book-inspired psychology, macro, technical, gold, and risk confluence score
 - `confidence_service.py`, `risk_service.py`, `signal_service.py` - scoring, risk, and final decision logic
 
-Default no-token sources include Swissquote XAU/USD live spot quotes, Yahoo Finance price data, TradingView `TVC:GOLD` technicals, ForexFactory calendar data, FXStreet news/analysis RSS, Federal Reserve FOMC calendar parsing, Yahoo Finance gold news RSS, CNBC RSS, and Investing.com RSS feeds.
+Default no-token sources include Swissquote XAU/USD live spot quotes, Yahoo Finance price data, TradingView `TVC:GOLD` technicals, ForexFactory calendar data, FXStreet news/analysis RSS, Federal Reserve FOMC calendar parsing, GDELT open news metadata, Google News RSS, Yahoo Finance gold news RSS, CNBC RSS, Investing.com RSS feeds, and Binance `PAXGUSDT` as a tokenized-gold microstructure proxy.
+
+The bot labels price identity explicitly. Swissquote is treated as the live spot quote, Yahoo `GC=F` as futures-candle context, and Binance `PAXGUSDT` as a proxy only. If the proxy basis is too wide, it is ignored.
 
 Short signal timeframes are supported:
 
@@ -72,22 +78,32 @@ Short signal timeframes are supported:
 
 TradingView is used as a supporting technical source. For `3m`, TradingView uses its closest available 5-minute interval while internal indicators use the exact resampled 3-minute candles.
 
+Higher-timeframe context is also checked:
+
+- H4 regime uses resampled hourly candles and EMA 50/EMA 200 structure.
+- H1 trend checks intermediate alignment.
+- M15 timing checks lower-timeframe confirmation.
+- Stale live spot quotes or wide spreads block signals before scoring.
+
 Some providers do not publish a stable free official API. OANDA, Myfxbook trader positioning, NewsAPI, Reuters-compatible APIs, and Investing.com/FxStreet calendar API adapters are optional. They are skipped unless configured, so the normal setup does not ask you for those keys.
 
 ## Confidence scoring
 
 The score uses a 100-point system:
 
-- Technical trend: 15
+- Technical trend: 11
 - Momentum indicators: 5
 - Support/resistance confirmation: 5
-- Japanese candlestick confirmation: 8
-- Spot/futures alignment: 8
-- USD/yield macro pressure: 8
-- Multi-timeframe trend: 15
-- PTJ-style macro/risk overlay: 15
-- Book playbook score: 12
-- News safety: 4
+- Japanese candlestick confirmation: 7
+- Spot/futures alignment: 6
+- USD/yield macro pressure: 7
+- H4/H1/M15 regime alignment: 14
+- Multi-timeframe trend: 9
+- PTJ-style macro/risk overlay: 11
+- Book playbook score: 9
+- Binance PAXG proxy microstructure: 4
+- GDELT open news: 4
+- News safety: 3
 - Volatility quality: 3
 - Agreement between external sources: 2
 
@@ -175,23 +191,21 @@ DATABASE_URL=sqlite+aiosqlite:////app/data/xau_signal_bot.db
 
 ## systemd deployment
 
-Create `/etc/systemd/system/xau-signal-bot.service`:
+Create `/etc/systemd/system/the-bot.service`:
 
 ```ini
 [Unit]
-Description=XAU/USD Signal Telegram Bot
+Description=THE_BOT XAU/USD Telegram Bot
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/xau-signal-bot
-EnvironmentFile=/opt/xau-signal-bot/.env
-ExecStart=/opt/xau-signal-bot/.venv/bin/python -m xau_signal_bot.bot.main
+WorkingDirectory=/root/THE_BOT
+EnvironmentFile=/root/THE_BOT/.env
+ExecStart=/root/THE_BOT/.venv/bin/python -m xau_signal_bot.bot.main
 Restart=always
-RestartSec=5
-User=xau-bot
-Group=xau-bot
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -200,9 +214,9 @@ WantedBy=multi-user.target
 Enable:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now xau-signal-bot
-sudo journalctl -u xau-signal-bot -f
+systemctl daemon-reload
+systemctl enable --now the-bot
+journalctl -u the-bot -f
 ```
 
 ## User settings

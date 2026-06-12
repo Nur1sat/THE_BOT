@@ -7,13 +7,16 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 
 from xau_signal_bot.bot.config import Settings
+from xau_signal_bot.services.binance_proxy_service import BinancePaxgProxyService
 from xau_signal_bot.services.book_playbook_service import BookPlaybookService
 from xau_signal_bot.services.candlestick_service import CandlestickService
 from xau_signal_bot.services.confidence_service import ConfidenceService
+from xau_signal_bot.services.data_quality_service import DataQualityService
 from xau_signal_bot.services.fed_service import FedService
 from xau_signal_bot.services.forexfactory_service import ForexFactoryService
 from xau_signal_bot.services.futures_alignment_service import FuturesAlignmentService
 from xau_signal_bot.services.fxstreet_service import FXStreetService
+from xau_signal_bot.services.gdelt_service import GdeltService
 from xau_signal_bot.services.indicator_service import IndicatorService
 from xau_signal_bot.services.investing_service import InvestingService
 from xau_signal_bot.services.macro_market_service import MacroMarketService
@@ -32,6 +35,7 @@ from xau_signal_bot.services.myfxbook_service import MyfxbookService
 from xau_signal_bot.services.news_service import NewsService
 from xau_signal_bot.services.parsing import parse_datetime
 from xau_signal_bot.services.price_service import PriceService
+from xau_signal_bot.services.regime_alignment_service import RegimeAlignmentService
 from xau_signal_bot.services.risk_service import RiskService
 from xau_signal_bot.services.tradingview_service import TradingViewService
 from xau_signal_bot.services.tudor_style_service import TudorStyleService
@@ -50,6 +54,9 @@ class SignalService:
         self.book_playbook_service = BookPlaybookService()
         self.macro_market_service = MacroMarketService()
         self.multi_timeframe_service = MultiTimeframeService()
+        self.regime_alignment_service = RegimeAlignmentService()
+        self.binance_proxy_service = BinancePaxgProxyService(settings)
+        self.data_quality_service = DataQualityService(settings.primary_quote_max_age_seconds)
         self._signal_cache: dict[str, tuple[datetime, SignalResult]] = {}
 
     async def analyze(self, user_settings: UserSignalSettings | None = None) -> SignalResult:
@@ -70,6 +77,7 @@ class SignalService:
             external_tasks = [
                 TradingViewService(self.settings).get_technical_summary(session, prefs.timeframe),
                 self.macro_market_service.analyze(session),
+                GdeltService(self.settings).get_gold_news(session),
                 ForexFactoryService(self.settings).get_calendar(session),
                 FXStreetService(self.settings).get_gold_news(session),
                 FedService(self.settings).get_calendar(session),
@@ -122,6 +130,9 @@ class SignalService:
                 source_results.append(SourceResult.unavailable("Japanese Candlesticks", "No OHLC candle source was available"))
             source_results.append(self.futures_alignment_service.analyze(market_data, source_results))
             source_results.append(await self._multi_timeframe_source(session, prefs.timeframe, indicators))
+            source_results.append(await self._regime_alignment_source(session))
+            source_results.append(await self.binance_proxy_service.analyze(session, market_data.price if market_data else None))
+            source_results.append(self.data_quality_service.analyze(market_data, source_results))
 
             calendar_events = self._calendar_events(source_results)
             news_items = self._news_items(source_results)
@@ -257,6 +268,20 @@ class SignalService:
         snapshot, _internal_source = self.indicator_service.analyze(market_data.candles)
         return snapshot
 
+    async def _regime_alignment_source(self, session: aiohttp.ClientSession) -> SourceResult:
+        timeframes = ("4h", "1h", "15m")
+        tasks = {
+            timeframe: asyncio.create_task(self._indicator_snapshot_for_timeframe(session, timeframe))
+            for timeframe in timeframes
+        }
+        snapshots = {}
+        for timeframe, task in tasks.items():
+            try:
+                snapshots[timeframe] = await asyncio.wait_for(task, timeout=self.settings.source_timeout_seconds)
+            except Exception:
+                snapshots[timeframe] = None
+        return self.regime_alignment_service.analyze(snapshots)
+
     def _candidate_decision(
         self,
         indicators,
@@ -266,6 +291,9 @@ class SignalService:
         reasons: list[str] = []
         if not market_data:
             return Decision.NO_TRADE, ["No current XAU/USD price source was available"]
+        data_quality = self._source_by_name("Data Quality Gate", sources)
+        if data_quality and data_quality.data.get("status") == "BAD":
+            return Decision.NO_TRADE, [f"Data-quality gate blocked the setup: {data_quality.summary}"]
         if not indicators:
             return Decision.NO_TRADE, ["Internal indicators are unavailable, so the bot cannot validate a trade"]
         if indicators.volatility_quality != "Good":
@@ -381,15 +409,26 @@ class SignalService:
         semaphore = asyncio.Semaphore(max(1, self.settings.source_concurrency))
 
         async def run(task: Awaitable[SourceResult]) -> SourceResult:
+            source_name = self._awaitable_source_name(task)
             async with semaphore:
                 try:
                     return await asyncio.wait_for(task, timeout=self.settings.source_timeout_seconds)
                 except Exception as exc:  # noqa: BLE001
-                    return SourceResult.unavailable("Timed out source", str(exc) or "Source timed out")
+                    return SourceResult.unavailable(source_name, str(exc) or "Source timed out")
 
         if not tasks:
             return []
         return list(await asyncio.gather(*(run(task) for task in tasks)))
+
+    @staticmethod
+    def _awaitable_source_name(task: Awaitable[SourceResult]) -> str:
+        frame = getattr(task, "cr_frame", None)
+        if frame:
+            owner = frame.f_locals.get("self")
+            name = getattr(owner, "name", None)
+            if isinstance(name, str) and name:
+                return name
+        return "Timed out source"
 
     def _get_cached_signal(self, cache_key: str) -> SignalResult | None:
         cached = self._signal_cache.get(cache_key)
@@ -472,7 +511,7 @@ class SignalService:
     @staticmethod
     def _is_soft_directional_source(source: SourceResult) -> bool:
         name = source.name.lower()
-        return bool(source.data.get("items")) or "news" in name or "analysis" in name
+        return bool(source.data.get("items")) or "news" in name or "analysis" in name or "proxy" in name or "paxg" in name
 
     @staticmethod
     def _blocking_quality_conflicts(direction: Direction, sources: list[SourceResult]) -> list[SourceResult]:
@@ -481,6 +520,7 @@ class SignalService:
             "Spot/Futures Alignment": 65,
             "USD/Yield Macro Pressure": 65,
             "Multi-Timeframe Trend": 67,
+            "Regime Alignment": 70,
             "Book Playbook Score": 70,
         }
         return [
@@ -501,8 +541,11 @@ class SignalService:
             "Spot/Futures Alignment": 55,
             "USD/Yield Macro Pressure": 55,
             "Multi-Timeframe Trend": 67,
+            "Regime Alignment": 65,
             "PTJ-Inspired Macro Overlay": 55,
             "Book Playbook Score": 55,
+            "GDELT Open News": 60,
+            "Binance PAXG Proxy": 60,
         }
         return [
             source
@@ -564,12 +607,13 @@ class SignalService:
     @staticmethod
     def _breakdown_reasons(breakdown: dict[str, int]) -> list[str]:
         return [
-            f"Confidence breakdown: trend {breakdown['technical_trend']}/15, "
+            f"Confidence breakdown: trend {breakdown['technical_trend']}/11, "
             f"momentum {breakdown['momentum']}/5, support/resistance {breakdown['support_resistance']}/5, "
-            f"candlesticks {breakdown['candlesticks']}/8, futures {breakdown['futures_alignment']}/8, "
-            f"USD/yields {breakdown['macro_pressure']}/8, multi-timeframe {breakdown['multi_timeframe']}/15, "
-            f"PTJ overlay {breakdown['ptj_overlay']}/15, book playbook {breakdown['book_playbook']}/12, "
-            f"news safety {breakdown['news_safety']}/4, "
+            f"candlesticks {breakdown['candlesticks']}/7, futures {breakdown['futures_alignment']}/6, "
+            f"USD/yields {breakdown['macro_pressure']}/7, regime {breakdown['regime_alignment']}/14, "
+            f"multi-timeframe {breakdown['multi_timeframe']}/9, PTJ overlay {breakdown['ptj_overlay']}/11, "
+            f"book playbook {breakdown['book_playbook']}/9, PAXG proxy {breakdown['proxy_microstructure']}/4, "
+            f"GDELT news {breakdown['open_news']}/4, news safety {breakdown['news_safety']}/3, "
             f"volatility {breakdown['volatility']}/3, source agreement {breakdown['external_agreement']}/2"
         ]
 

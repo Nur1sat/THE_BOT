@@ -35,13 +35,16 @@ class ConfidenceService:
             "technical_trend": self._technical_trend(candidate_direction, indicators),
             "momentum": self._momentum(candidate_direction, indicators),
             "support_resistance": self._support_resistance(candidate_direction, indicators),
-            "candlesticks": self._source_quality("Japanese Candlesticks", candidate_direction, sources, 8),
-            "futures_alignment": self._source_quality("Spot/Futures Alignment", candidate_direction, sources, 8),
-            "macro_pressure": self._source_quality("USD/Yield Macro Pressure", candidate_direction, sources, 8),
-            "multi_timeframe": self._source_quality("Multi-Timeframe Trend", candidate_direction, sources, 15),
-            "ptj_overlay": self._source_quality("PTJ-Inspired Macro Overlay", candidate_direction, sources, 15),
-            "book_playbook": self._source_quality("Book Playbook Score", candidate_direction, sources, 12),
-            "news_safety": 0 if dangerous_news else 4,
+            "candlesticks": self._source_quality("Japanese Candlesticks", candidate_direction, sources, 7),
+            "futures_alignment": self._source_quality("Spot/Futures Alignment", candidate_direction, sources, 6),
+            "macro_pressure": self._source_quality("USD/Yield Macro Pressure", candidate_direction, sources, 7),
+            "regime_alignment": self._source_quality("Regime Alignment", candidate_direction, sources, 14),
+            "multi_timeframe": self._source_quality("Multi-Timeframe Trend", candidate_direction, sources, 9),
+            "ptj_overlay": self._source_quality("PTJ-Inspired Macro Overlay", candidate_direction, sources, 11),
+            "book_playbook": self._source_quality("Book Playbook Score", candidate_direction, sources, 9),
+            "proxy_microstructure": self._source_quality("Binance PAXG Proxy", candidate_direction, sources, 4),
+            "open_news": self._source_quality("GDELT Open News", candidate_direction, sources, 4),
+            "news_safety": 0 if dangerous_news else 3,
             "volatility": self._volatility(indicators),
             "external_agreement": self._external_agreement(candidate_direction, sources),
         }
@@ -63,7 +66,7 @@ class ConfidenceService:
     def _technical_trend(direction: Direction, indicators: IndicatorSnapshot | None) -> int:
         if not indicators or direction == Direction.NEUTRAL:
             return 0
-        return 15 if indicators.trend_direction == direction else 0
+        return 11 if indicators.trend_direction == direction else 0
 
     @staticmethod
     def _momentum(direction: Direction, indicators: IndicatorSnapshot | None) -> int:
@@ -128,6 +131,10 @@ class ConfidenceService:
                 "Book Playbook Score",
                 "USD/Yield Macro Pressure",
                 "Multi-Timeframe Trend",
+                "Regime Alignment",
+                "Binance PAXG Proxy",
+                "GDELT Open News",
+                "Data Quality Gate",
             }
             and source.direction in {Direction.BULLISH, Direction.BEARISH}
         ]
