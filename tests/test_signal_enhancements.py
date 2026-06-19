@@ -7,8 +7,9 @@ from unittest.mock import patch
 from xau_signal_bot.bot.config import Settings
 from xau_signal_bot.services.binance_proxy_service import BinancePaxgProxyService
 from xau_signal_bot.services.data_quality_service import DataQualityService
-from xau_signal_bot.services.models import Direction, IndicatorSnapshot, MarketData, SourceResult
+from xau_signal_bot.services.models import Decision, Direction, IndicatorSnapshot, MarketData, SourceResult
 from xau_signal_bot.services.regime_alignment_service import RegimeAlignmentService
+from xau_signal_bot.services.risk_service import RiskService
 
 
 def snapshot(
@@ -103,6 +104,20 @@ class BinancePaxgProxyServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.direction, Direction.BULLISH)
         self.assertTrue(result.data["basis_quality"])
         self.assertGreater(result.data["orderbook_imbalance"], 0)
+
+
+class RiskServiceTest(unittest.TestCase):
+    def test_primary_take_profit_uses_one_point_five_reward_to_risk(self) -> None:
+        plan = RiskService.calculate(Decision.LONG, entry=2000.0, atr=10.0)
+
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.stop_loss, 1985.0)
+        self.assertEqual(plan.take_profit_1, 2015.0)
+        self.assertEqual(plan.take_profit_2, 2022.5)
+        self.assertEqual(plan.take_profit_3, 2030.0)
+        self.assertEqual(plan.risk_reward, "1:1.5 primary")
+        self.assertEqual(plan.risk_per_unit, 15.0)
 
 
 if __name__ == "__main__":

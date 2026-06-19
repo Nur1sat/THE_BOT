@@ -134,6 +134,36 @@ Stop loss uses ATR:
 - LONG: `SL = entry - 1.5 * ATR`
 - SHORT: `SL = entry + 1.5 * ATR`
 
+Take profits use fixed reward/risk from that stop distance:
+
+- TP1: `1.0R`
+- TP2: `1.5R` primary target
+- TP3: `2.0R` extended target
+
+## Demo backtest
+
+Run a fast no-key demo backtest for the 1-minute, 3-minute, and 5-minute rule set:
+
+```bash
+python scripts/backtest_demo_trades.py --target-trades 100 --target-win-rate 69
+```
+
+For a deeper no-key proxy sample:
+
+```bash
+python scripts/backtest_demo_trades.py --data-source binance --target-trades 100 --target-win-rate 69 --binance-chunks 30
+```
+
+To test only the highest-scored signals in the sample:
+
+```bash
+python scripts/backtest_demo_trades.py --data-source binance --target-trades 100 --target-win-rate 69 --binance-chunks 30 --selection strongest
+```
+
+The tester tries Yahoo `GC=F` first. If Yahoo is unavailable or rate-limited, it falls back to Binance `PAXGUSDT` tokenized-gold proxy candles without requiring an API key.
+
+The output reports the best 100 closed demo trades by timeframe, the selected parameter set, win rate, total R, and whether the 69% target was reached. This is historical/proxy testing only; it is not a guaranteed future win rate.
+
 ## Setup
 
 ```bash
